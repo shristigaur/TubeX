@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AuthCard } from '@/components/auth/AuthCard';
-import { signup, ApiError } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { ApiError } from '@/lib/api';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -15,6 +17,9 @@ interface SignupErrors {
 }
 
 export default function SignupPage() {
+  const router = useRouter();
+  const { signup } = useAuth();
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -70,18 +75,21 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      const response = await signup({
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-      });
+      const response = await signup(name, email, password);
 
-      setSuccessMessage(
-        response.message || 'Account created successfully! You can now log in with your credentials.'
-      );
       // Clear sensitive password fields on successful registration
       setPassword('');
       setConfirmPassword('');
+
+      // If the backend returned an access token, AuthContext saved it and authenticated the user
+      if (response?.data?.accessToken) {
+        router.push('/');
+      } else {
+        // Fallback in case token was not returned: direct user to log in
+        setSuccessMessage(
+          response.message || 'Account created successfully! Please log in to continue.'
+        );
+      }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         if (err.statusCode === 409) {
@@ -94,6 +102,10 @@ export default function SignupPage() {
             general: err.message,
           });
         }
+      } else if (err instanceof Error) {
+        setErrors({
+          general: err.message,
+        });
       } else {
         setErrors({
           general: 'An unexpected error occurred during signup. Please try again.',

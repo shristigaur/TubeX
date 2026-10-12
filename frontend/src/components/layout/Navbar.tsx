@@ -2,8 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 
 export function Navbar() {
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -20,6 +24,15 @@ export function Navbar() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [mobileMenuOpen]);
+
+  const handleLogout = () => {
+    logout();
+    setMobileMenuOpen(false);
+    router.push('/');
+  };
+
+  // Safe user display name that gracefully handles empty/whitespace strings
+  const displayName = user?.name?.trim() || 'Creator';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
@@ -75,18 +88,48 @@ export function Navbar() {
 
         {/* Action Buttons (Desktop) */}
         <div className="hidden md:flex items-center gap-3">
-          <Link
-            href="/login"
-            className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-300 transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
-          >
-            Log In
-          </Link>
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-cyan-500/20 transition-all hover:from-blue-500 hover:to-cyan-400 hover:shadow-md hover:shadow-cyan-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
-          >
-            Get Started
-          </Link>
+          {isLoading ? (
+            <div
+              className="h-9 w-36 animate-pulse rounded-lg bg-slate-900/80 border border-slate-800"
+              aria-label="Loading authentication status"
+            />
+          ) : isAuthenticated ? (
+            <div className="flex items-center gap-3">
+              <div
+                className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200"
+                aria-label={`Logged in as ${displayName}`}
+              >
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-950 text-[10px] font-bold text-cyan-400 border border-cyan-500/30">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+                <span className="max-w-[120px] truncate font-medium text-slate-200" title={displayName}>
+                  {displayName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-lg border border-slate-750 px-3.5 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-slate-600 hover:bg-slate-900 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+              >
+                Log Out
+              </button>
+            </div>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-300 transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+              >
+                Log In
+              </Link>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-cyan-500/20 transition-all hover:from-blue-500 hover:to-cyan-400 hover:shadow-md hover:shadow-cyan-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+              >
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile menu button */}
@@ -138,20 +181,50 @@ export function Navbar() {
               Trust &amp; Safety
             </Link>
             <div className="mt-2 flex flex-col gap-2 border-t border-slate-800 pt-3">
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full rounded-lg border border-slate-700 px-3 py-2 text-center text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
-              >
-                Log In
-              </Link>
-              <Link
-                href="/signup"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:from-blue-500 hover:to-cyan-400"
-              >
-                Get Started
-              </Link>
+              {isLoading ? (
+                <div
+                  className="h-10 w-full animate-pulse rounded-lg bg-slate-900/80 border border-slate-800"
+                  aria-label="Loading authentication status"
+                />
+              ) : isAuthenticated ? (
+                <div className="flex flex-col gap-2">
+                  <div
+                    className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm text-slate-200"
+                    aria-label={`Logged in as ${displayName}`}
+                  >
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-950 text-xs font-bold text-cyan-400 border border-cyan-500/30">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="truncate font-medium text-slate-200">
+                      {displayName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full rounded-lg border border-slate-750 px-3 py-2 text-center text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full rounded-lg border border-slate-700 px-3 py-2 text-center text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
+                  >
+                    Log In
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full rounded-lg bg-gradient-to-r from-blue-600 to-cyan-500 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:from-blue-500 hover:to-cyan-400"
+                  >
+                    Get Started
+                  </Link>
+                </>
+              )}
             </div>
           </nav>
         </div>
@@ -159,3 +232,4 @@ export function Navbar() {
     </header>
   );
 }
+

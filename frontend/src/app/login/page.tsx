@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AuthCard } from '@/components/auth/AuthCard';
-import { login, ApiError } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { ApiError } from '@/lib/api';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -13,12 +15,14 @@ interface FormErrors {
 }
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { login } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
@@ -43,7 +47,6 @@ export default function LoginPage() {
     e.preventDefault();
     if (isLoading) return;
 
-    setSuccessMessage(null);
     setErrors({});
 
     if (!validate()) {
@@ -53,18 +56,19 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await login({
-        email: email.trim().toLowerCase(),
-        password,
-      });
+      await login(email, password);
 
-      setSuccessMessage(
-        response.message || 'Login successful! Authentication verified with TubeX.'
-      );
-      // Clear sensitive password field on successful login
+      // Clear password from local state
       setPassword('');
+
+      // On successful authentication, redirect to the marketplace homepage
+      router.push('/');
     } catch (err: unknown) {
       if (err instanceof ApiError) {
+        setErrors({
+          general: err.message,
+        });
+      } else if (err instanceof Error) {
         setErrors({
           general: err.message,
         });
@@ -87,18 +91,6 @@ export default function LoginPage() {
       footerLinkHref="/signup"
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        {/* Success Notice Banner */}
-        {successMessage && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="rounded-lg border border-emerald-500/30 bg-emerald-950/40 p-3 text-xs text-emerald-200"
-          >
-            <div className="font-semibold text-emerald-300">Login Successful</div>
-            <p className="mt-1 text-slate-300">{successMessage}</p>
-          </div>
-        )}
-
         {/* General Error Banner */}
         {errors.general && (
           <div
