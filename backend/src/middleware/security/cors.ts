@@ -2,11 +2,30 @@ import cors from 'cors';
 import { config } from '../../config/env.js';
 import { sendError } from '../../utils/response.js';
 
+/**
+ * Checks whether an incoming origin is permitted by the CORS policy.
+ *
+ * Requests without an Origin header (e.g. server-to-server calls or curl/postman)
+ * are permitted because CORS is a browser-enforced security mechanism.
+ * IMPORTANT: Non-browser requests without an Origin header are NOT authenticated
+ * merely because CORS permits them. Sensitive endpoints must enforce authorization
+ * using the requireAuth middleware.
+ *
+ * Browser origins must match entries in allowedOrigins exactly (no wildcards or substrings).
+ */
+export const isOriginAllowed = (
+  origin: string | undefined,
+  allowedOrigins: string[] = config.allowedOrigins
+): boolean => {
+  if (origin === undefined) {
+    return true;
+  }
+  return allowedOrigins.includes(origin);
+};
+
 export const corsMiddleware = cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. server-to-server or curl in dev)
-    // and explicitly configured frontend URL.
-    if (!origin || origin === config.frontendUrl) {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

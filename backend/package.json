@@ -10,7 +10,9 @@
     "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:file": "vitest run"
+    "test:file": "vitest run",
+    "test:integration": "npm run check:integration-prisma && vitest run --config vitest.integration.config.ts",
+    "check:integration-prisma": "node scripts/verify-integration-prisma.js"
   },
   "keywords": [],
   "author": "",
@@ -35,6 +37,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.4",
+    "mongodb-memory-server-core": "11.3.0",
     "prisma": "^6.19.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
