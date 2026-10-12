@@ -12,8 +12,10 @@ export interface JwtPayload {
 export const signAccessToken = (payload: JwtPayload): string => {
   const options: SignOptions = {
     algorithm: JWT_ALGORITHM,
-    ...(config.jwtAccessExpiresIn ? { expiresIn: config.jwtAccessExpiresIn as SignOptions['expiresIn'] } : {}),
   };
+  if (config.jwtAccessExpiresIn) {
+    options.expiresIn = config.jwtAccessExpiresIn as NonNullable<SignOptions['expiresIn']>;
+  }
   return jwt.sign(payload, config.jwtAccessSecret, options);
 };
 

@@ -83,3 +83,38 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     next(error);
   }
 };
+
+const MONGODB_OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
+
+export const getMe = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const userId = req.user?.sub;
+
+    if (!userId || !MONGODB_OBJECT_ID_REGEX.test(userId)) {
+      sendError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
+      sendError(res, 404, 'User not found');
+      return;
+    }
+
+    sendSuccess(res, 200, 'User profile retrieved successfully.', { user });
+  } catch (error) {
+    next(error);
+  }
+};
+

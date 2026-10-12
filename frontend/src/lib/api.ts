@@ -67,6 +67,7 @@ export interface LoginRequest {
 }
 
 export type AuthResponse = ApiSuccessResponse<AuthResponseData>;
+export type UserResponse = ApiSuccessResponse<{ user: UserProfile }>;
 
 /**
  * Safe client error representation that encapsulates HTTP status and sanitized messages
@@ -110,34 +111,47 @@ function getStatusFallbackMessage(statusCode: number): string {
   }
 }
 
+interface ServerResponsePayload {
+  success?: boolean;
+  message?: string;
+  data?: unknown;
+  error?: unknown;
+}
+
 /**
- * Internal POST helper with safe JSON parsing and error sanitization.
+ * Shared request executor with safe JSON parsing, status handling, and optional Bearer token injection.
  */
-async function post<T>(endpoint: string, body: unknown): Promise<ApiSuccessResponse<T>> {
+async function request<T>(
+  endpoint: string,
+  options: {
+    method: 'GET' | 'POST';
+    body?: unknown;
+    token?: string;
+  }
+): Promise<ApiSuccessResponse<T>> {
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${API_BASE_URL}${normalizedEndpoint}`;
+
+  const headers: Record<string, string> = {};
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (options.token) {
+    headers['Authorization'] = `Bearer ${options.token}`;
+  }
 
   let res: Response;
   try {
     res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      method: options.method,
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
   } catch {
     throw new ApiError(
       'Unable to connect to TubeX server. Please check your network connection.',
       0
     );
-  }
-
-  interface ServerResponsePayload {
-    success?: boolean;
-    message?: string;
-    data?: unknown;
-    error?: unknown;
   }
 
   let jsonBody: ServerResponsePayload | null = null;
@@ -167,6 +181,13 @@ async function post<T>(endpoint: string, body: unknown): Promise<ApiSuccessRespo
 }
 
 /**
+ * Internal POST helper with safe JSON parsing and error sanitization.
+ */
+async function post<T>(endpoint: string, body: unknown): Promise<ApiSuccessResponse<T>> {
+  return request<T>(endpoint, { method: 'POST', body });
+}
+
+/**
  * Register a new user account.
  * Transmits only name, email, and password to the backend.
  */
@@ -183,3 +204,14 @@ export async function login(payload: LoginRequest): Promise<AuthResponse> {
   const { email, password } = payload;
   return post<AuthResponseData>('/auth/login', { email, password });
 }
+
+/**
+ * Fetch the currently authenticated user profile using a Bearer token.
+ */
+export async function getMe(token: string): Promise<UserResponse> {
+  return request<{ user: UserProfile }>('/auth/me', {
+    method: 'GET',
+    token,
+  });
+}
+

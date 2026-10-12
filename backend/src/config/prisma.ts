@@ -5,8 +5,12 @@ const TEST_PRISMA_CLIENT = Symbol.for('tubex.test.prisma.client');
 
 declare global {
   var prisma: PrismaClient | undefined;
-  var [TEST_PRISMA_CLIENT]: PrismaClient | undefined;
 }
+
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+  [TEST_PRISMA_CLIENT]?: PrismaClient;
+};
 
 /**
  * Validates that an object structurally implements essential PrismaClient methods.
@@ -35,10 +39,10 @@ export function registerTestPrismaClient(client: PrismaClient): void {
   if (!isValidPrismaClientShape(client)) {
     throw new Error('FAIL-CLOSED PRISMA GATE: Provided candidate does not implement the required PrismaClient interface.');
   }
-  if (global[TEST_PRISMA_CLIENT]) {
+  if (globalForPrisma[TEST_PRISMA_CLIENT]) {
     throw new Error('FAIL-CLOSED PRISMA GATE: Duplicate test client registration rejected. A test client is already registered.');
   }
-  global[TEST_PRISMA_CLIENT] = client;
+  globalForPrisma[TEST_PRISMA_CLIENT] = client;
 }
 
 /**
@@ -46,7 +50,7 @@ export function registerTestPrismaClient(client: PrismaClient): void {
  */
 function resolvePrismaClient(): PrismaClient {
   if (process.env.NODE_ENV === 'test') {
-    const testClient = global[TEST_PRISMA_CLIENT];
+    const testClient = globalForPrisma[TEST_PRISMA_CLIENT];
     if (!testClient) {
       throw new Error(
         'FAIL-CLOSED PRISMA GATE: Direct construction of PrismaClient is strictly blocked in test mode. ' +
@@ -55,6 +59,7 @@ function resolvePrismaClient(): PrismaClient {
     }
     return testClient;
   }
+
 
   // Normal development and production behavior
   return global.prisma || new PrismaClient();
