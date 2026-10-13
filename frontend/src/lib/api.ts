@@ -5,9 +5,80 @@
  * Sensitive data such as tokens and passwords are never logged or stored here.
  */
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1'
-).replace(/\/+$/, '');
+/**
+ * Safely normalizes the configured API base URL.
+ * - Uses http://localhost:4000/api/v1 as fallback if absent or whitespace.
+ * - Trims whitespace and removes trailing slashes.
+ * - Allows only absolute http: and https: URLs.
+ * - Rejects embedded credentials (username or password).
+ * - Rejects unsupported protocols (ftp, file, ws, wss, etc.).
+ * - If given a host-only URL (e.g. https://example.onrender.com), appends /api/v1.
+ * - Preserves existing /api/v1 suffix and relative /api/v1 path.
+ * - Rejects unexpected paths and malformed URLs with sanitized error messages.
+ */
+export function normalizeApiBaseUrl(rawUrl?: string): string {
+  const fallback = 'http://localhost:4000/api/v1';
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = rawUrl.trim();
+  if (trimmed === '') {
+    return fallback;
+  }
+
+  // Remove trailing slashes
+  const cleaned = trimmed.replace(/\/+$/, '');
+
+  try {
+    const parsed = new URL(cleaned);
+
+    // Enforce HTTP / HTTPS protocols
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(
+        'Invalid NEXT_PUBLIC_API_URL protocol. Expected "http:" or "https:".'
+      );
+    }
+
+    // Reject embedded credentials
+    if (parsed.username || parsed.password) {
+      throw new Error(
+        'Invalid NEXT_PUBLIC_API_URL: Embedded credentials (username or password) are not permitted.'
+      );
+    }
+
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+
+    // Host-only URL (e.g. https://example.onrender.com or pathname is empty / '/')
+    if (pathname === '' || pathname === '/') {
+      return `${parsed.origin}/api/v1`;
+    }
+
+    // Exact expected API version path
+    if (pathname === '/api/v1') {
+      return `${parsed.origin}/api/v1`;
+    }
+
+    // Unexpected path configured
+    throw new Error(
+      'Invalid NEXT_PUBLIC_API_URL path. Expected a host-only URL or ending in "/api/v1".'
+    );
+  } catch (err) {
+    if (err instanceof TypeError) {
+      // Failed URL parsing (e.g. relative path without origin or malformed format)
+      if (cleaned === '/api/v1') {
+        return '/api/v1';
+      }
+      throw new Error(
+        'Invalid NEXT_PUBLIC_API_URL. Must be a valid absolute HTTP/HTTPS URL.'
+      );
+    }
+    throw err;
+  }
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+
 
 /**
  * Standard TubeX user profile shape returned by authentication endpoints.

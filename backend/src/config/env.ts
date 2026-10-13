@@ -5,7 +5,7 @@ export function parseAllowedOrigins(
   if (typeof envFrontendUrls === 'string') {
     const urls = envFrontendUrls
       .split(',')
-      .map((url) => url.trim())
+      .map((url) => url.trim().replace(/\/+$/, ''))
       .filter((url) => url.length > 0);
 
     if (urls.length > 0) {
@@ -13,7 +13,7 @@ export function parseAllowedOrigins(
     }
   }
 
-  const fallback = typeof envFrontendUrl === 'string' ? envFrontendUrl.trim() : 'http://localhost:3000';
+  const fallback = typeof envFrontendUrl === 'string' ? envFrontendUrl.trim().replace(/\/+$/, '') : 'http://localhost:3000';
   return fallback.length > 0 ? [fallback] : ['http://localhost:3000'];
 }
 
