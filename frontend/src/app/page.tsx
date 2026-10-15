@@ -169,7 +169,16 @@ export default function HomePage() {
                 <dl className="mt-6 space-y-4 text-sm">
                   <div className="flex gap-3">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-400">
-                      &check;
+                      <svg
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
                     </div>
                     <div>
                       <dt className="font-semibold text-white">Manual Analytics Verification Review</dt>
@@ -181,7 +190,16 @@ export default function HomePage() {
 
                   <div className="flex gap-3">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-400">
-                      &check;
+                      <svg
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
                     </div>
                     <div>
                       <dt className="font-semibold text-white">Escrow Payment Structure</dt>
@@ -193,7 +211,16 @@ export default function HomePage() {
 
                   <div className="flex gap-3">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-400">
-                      &check;
+                      <svg
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
                     </div>
                     <div>
                       <dt className="font-semibold text-white">Cooling-Off &amp; Handover Window</dt>

@@ -1,6 +1,4 @@
-'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export interface FilterValues {
   niche: string;
@@ -48,6 +46,8 @@ interface SearchFilterBarProps {
   resultCount?: number;
   totalCount?: number;
   isFiltered?: boolean;
+  isLoading?: boolean;
+  resetSignal?: number;
 }
 
 export function SearchFilterBar({
@@ -55,11 +55,20 @@ export function SearchFilterBar({
   onChange,
   onApplyFilters,
   onResetFilters,
-  resultCount = 6,
-  totalCount = 6,
+  resultCount = 0,
+  totalCount = 0,
   isFiltered = false,
+  isLoading = false,
+  resetSignal,
 }: SearchFilterBarProps) {
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Reset notice when resetSignal changes from parent
+  useEffect(() => {
+    if (resetSignal) {
+      setNotice(null);
+    }
+  }, [resetSignal]);
 
   const handleFilterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +79,7 @@ export function SearchFilterBar({
     const budgetLabel = BUDGET_LABEL_MAP[values.budget] || values.budget;
 
     setNotice(
-      `Displaying matching sample listings [Niche: ${nicheLabel}, Subs: ${subsLabel}, Budget: ${budgetLabel}]. Live database search will connect to backend API in Phase 2.`
+      `Filters applied: [Niche: ${nicheLabel}, Subs: ${subsLabel}, Budget: ${budgetLabel}].`
     );
   };
 
@@ -148,19 +157,33 @@ export function SearchFilterBar({
         <div className="flex gap-2">
           <button
             type="submit"
-            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-cyan-500/20 transition-all hover:from-blue-500 hover:to-cyan-400 hover:shadow-cyan-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+            disabled={isLoading}
+            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-cyan-500/20 transition-all hover:from-blue-500 hover:to-cyan-400 hover:shadow-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
           >
-            <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            Filter Channels
+            {isLoading ? (
+              <>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                Filtering...
+              </>
+            ) : (
+              <>
+                <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Filter Channels
+              </>
+            )}
           </button>
           {isFiltered && (
             <button
               type="button"
               onClick={handleResetClick}
+              disabled={isLoading}
               title="Reset all filters"
-              className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:border-slate-600 hover:bg-slate-700 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:border-slate-600 hover:bg-slate-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
             >
               Reset
             </button>
@@ -176,7 +199,7 @@ export function SearchFilterBar({
           className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/40 px-3.5 py-2.5 text-xs text-cyan-200"
         >
           <div>
-            <span className="font-semibold text-cyan-300">Sample Filter Active:</span> {notice}
+            <span className="font-semibold text-cyan-300">Active Filters:</span> {notice}
             <span className="ml-1 text-slate-400">
               ({resultCount} of {totalCount} matches)
             </span>

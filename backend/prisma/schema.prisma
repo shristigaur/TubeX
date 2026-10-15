@@ -13,12 +13,49 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
   name         String
-  email        String   @unique
+  email        String    @unique
   passwordHash String?
-  googleId     String?  @unique
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  googleId     String?   @unique
+  role         Role      @default(USER)
+  channels     Channel[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+enum ChannelStatus {
+  DRAFT
+  AVAILABLE
+  UNDER_CONTRACT
+  SOLD
+  DELISTED
+}
+
+model Channel {
+  id                 String        @id @default(auto()) @map("_id") @db.ObjectId
+  name               String
+  handle             String
+  youtubeUrl         String?
+  niche              String
+  subscribersCount   Int
+  monthlyViewsCount  Int?
+  monetized          Boolean       @default(false)
+  verifiedAnalytics  Boolean       @default(false)
+  priceCents         Int
+  description        String
+  featuredBadge      String?
+  status             ChannelStatus @default(DRAFT)
+  isPublished        Boolean       @default(false)
+
+  // Required Seller Ownership
+  sellerId           String        @db.ObjectId
+  seller             User          @relation(fields: [sellerId], references: [id])
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([niche, status, isPublished])
+  @@index([priceCents])
+  @@index([subscribersCount])
 }

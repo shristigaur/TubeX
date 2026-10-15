@@ -141,6 +141,78 @@ export type AuthResponse = ApiSuccessResponse<AuthResponseData>;
 export type UserResponse = ApiSuccessResponse<{ user: UserProfile }>;
 
 /**
+ * Channel listing shape returned by the public marketplace API.
+ */
+export interface ChannelListing {
+  id: string;
+  name: string;
+  handle: string;
+  youtubeUrl?: string | null;
+  niche: string;
+  subscribers: string;
+  subscribersCount: number;
+  monthlyViews: string | null;
+  monthlyViewsCount?: number | null;
+  monetized: boolean;
+  priceUsd: number;
+  priceCents?: number;
+  verifiedAnalytics: boolean;
+  featuredBadge?: string | null;
+  description: string;
+  seller?: {
+    id: string;
+    name: string;
+  };
+}
+
+/**
+ * Pagination metadata returned in listings response.
+ */
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+/**
+ * Payload data for channels listing response.
+ */
+export interface ChannelsResponseData {
+  channels: ChannelListing[];
+  pagination: PaginationMeta;
+}
+
+/**
+ * Supported query parameters for public channel marketplace.
+ */
+export interface ChannelsQueryParams {
+  niche?: string;
+  subscribers?: string;
+  budget?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  minSubscribers?: number;
+  maxSubscribers?: number;
+  page?: number;
+  limit?: number;
+  sort?: 'newest' | 'oldest' | 'price_asc' | 'price_desc' | 'subscribers_desc' | 'subscribers_asc';
+}
+
+export type ChannelsResponse = ApiSuccessResponse<ChannelsResponseData>;
+
+/**
+ * Payload data for single channel response.
+ */
+export interface SingleChannelResponseData {
+  channel: ChannelListing;
+}
+
+export type SingleChannelResponse = ApiSuccessResponse<SingleChannelResponseData>;
+
+/**
  * Safe client error representation that encapsulates HTTP status and sanitized messages
  * without exposing stack traces, raw server internals, or credentials.
  */
@@ -198,6 +270,7 @@ async function request<T>(
     method: 'GET' | 'POST';
     body?: unknown;
     token?: string;
+    signal?: AbortSignal;
   }
 ): Promise<ApiSuccessResponse<T>> {
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -217,8 +290,12 @@ async function request<T>(
       method: options.method,
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: options.signal,
     });
-  } catch {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
     throw new ApiError(
       'Unable to connect to TubeX server. Please check your network connection.',
       0
@@ -284,5 +361,107 @@ export async function getMe(token: string): Promise<UserResponse> {
     method: 'GET',
     token,
   });
+}
+
+/**
+ * Serializes channel query parameters into a URL query string.
+ * Omits undefined, empty, or 'all' filter values.
+ */
+export function buildChannelsQueryString(params?: ChannelsQueryParams): string {
+  if (!params) return '';
+  const searchParams = new URLSearchParams();
+
+  if (params.niche && params.niche !== 'all') {
+    searchParams.set('niche', params.niche);
+  }
+  if (params.subscribers && params.subscribers !== 'all') {
+    searchParams.set('subscribers', params.subscribers);
+  }
+  if (params.budget && params.budget !== 'all') {
+    searchParams.set('budget', params.budget);
+  }
+  if (params.minPrice !== undefined && Number.isFinite(params.minPrice)) {
+    searchParams.set('minPrice', params.minPrice.toString());
+  }
+  if (params.maxPrice !== undefined && Number.isFinite(params.maxPrice)) {
+    searchParams.set('maxPrice', params.maxPrice.toString());
+  }
+  if (params.minSubscribers !== undefined && Number.isFinite(params.minSubscribers)) {
+    searchParams.set('minSubscribers', params.minSubscribers.toString());
+  }
+  if (params.maxSubscribers !== undefined && Number.isFinite(params.maxSubscribers)) {
+    searchParams.set('maxSubscribers', params.maxSubscribers.toString());
+  }
+  if (params.page !== undefined && Number.isFinite(params.page) && params.page > 0) {
+    searchParams.set('page', params.page.toString());
+  }
+  if (params.limit !== undefined && Number.isFinite(params.limit) && params.limit > 0) {
+    searchParams.set('limit', params.limit.toString());
+  }
+  if (params.sort) {
+    searchParams.set('sort', params.sort);
+  }
+
+  const qs = searchParams.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Fetch public channel listings from /api/v1/channels with optional filters, sorting, and pagination.
+ * Does not send authentication tokens for public browsing.
+ */
+export async function fetchChannels(
+  params?: ChannelsQueryParams,
+  options?: { signal?: AbortSignal }
+): Promise<ChannelsResponse> {
+  const qs = buildChannelsQueryString(params);
+  const response = await request<ChannelsResponseData>(`/channels${qs}`, {
+    method: 'GET',
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    !Array.isArray(response.data.channels) ||
+    !response.data.pagination ||
+    typeof response.data.pagination.total !== 'number'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Fetch a single public channel listing by its unique ID from /api/v1/channels/:id.
+ * Does not send authentication tokens for public browsing.
+ * Encodes the channel ID safely in the URL path.
+ */
+export async function fetchChannelById(
+  id: string,
+  options?: { signal?: AbortSignal }
+): Promise<SingleChannelResponse> {
+  const trimmedId = id ? id.trim() : '';
+  if (!trimmedId) {
+    throw new ApiError('Channel ID is required.', 400);
+  }
+
+  const encodedId = encodeURIComponent(trimmedId);
+  const response = await request<SingleChannelResponseData>(`/channels/${encodedId}`, {
+    method: 'GET',
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    !response.data.channel ||
+    typeof response.data.channel.id !== 'string' ||
+    typeof response.data.channel.name !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
 }
 

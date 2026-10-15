@@ -1,19 +1,8 @@
 import React from 'react';
+import Link from 'next/link';
+import type { ChannelListing } from '@/lib/api';
 
-export interface ChannelListing {
-  id: string;
-  name: string;
-  handle: string;
-  niche: string;
-  subscribers: string;
-  subscribersCount: number;
-  monthlyViews: string;
-  monetized: boolean;
-  priceUsd: number;
-  verifiedAnalytics: boolean;
-  featuredBadge?: string;
-  description: string;
-}
+export type { ChannelListing };
 
 export const SAMPLE_CHANNELS: ChannelListing[] = [
   {
@@ -125,11 +114,16 @@ export function ChannelCard({ channel }: ChannelCardProps) {
         <div className="mt-3.5">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-white group-hover:text-cyan-300">
-              {channel.name}
+              <Link
+                href={`/channels/${channel.id}`}
+                className="hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+              >
+                {channel.name}
+              </Link>
             </h3>
             {channel.monetized && (
               <span
-                title="Monetization Active (Illustrative)"
+                title="Monetization Active"
                 className="inline-flex h-5 items-center rounded-full bg-emerald-950/80 px-2 text-[10px] font-medium text-emerald-400 ring-1 ring-emerald-500/30"
               >
                 Monetized
@@ -152,30 +146,30 @@ export function ChannelCard({ channel }: ChannelCardProps) {
           </div>
           <div className="border-l border-slate-800">
             <span className="block text-[11px] uppercase tracking-wider text-slate-400">Monthly Views</span>
-            <span className="font-semibold text-slate-100">{channel.monthlyViews}</span>
+            <span className="font-semibold text-slate-100">{channel.monthlyViews ?? '—'}</span>
           </div>
         </div>
       </div>
 
-      {/* Bottom row: Illustrative Price & Action */}
+      {/* Bottom row: Price & Action */}
       <div className="mt-5 border-t border-slate-800/80 pt-4">
         <div className="flex items-baseline justify-between">
           <div>
             <span className="block text-[10px] font-medium uppercase tracking-wider text-slate-400">
-              Illustrative Price
+              Price
             </span>
             <span className="text-xl font-bold tracking-tight text-white">
               ${channel.priceUsd.toLocaleString()}
             </span>
             <span className="ml-1 text-xs text-slate-400">USD</span>
           </div>
-          <button
-            type="button"
+          <Link
+            href={`/channels/${channel.id}`}
             className="inline-flex items-center justify-center rounded-lg border border-cyan-500/30 bg-cyan-950/40 px-3 py-1.5 text-xs font-medium text-cyan-300 transition-colors hover:border-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
-            aria-label={`View sample listing for ${channel.name} (Preview)`}
+            aria-label={`Listing preview for ${channel.name}`}
           >
-            Sample Preview
-          </button>
+            Listing Preview
+          </Link>
         </div>
       </div>
     </article>
