@@ -213,6 +213,77 @@ export interface SingleChannelResponseData {
 export type SingleChannelResponse = ApiSuccessResponse<SingleChannelResponseData>;
 
 /**
+ * Valid channel lifecycle statuses matching the backend Prisma schema.
+ */
+export type ChannelStatus =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
+  | 'AVAILABLE'
+  | 'UNDER_CONTRACT'
+  | 'SOLD'
+  | 'DELISTED';
+
+/**
+ * Seller channel listing shape returned by the authenticated seller API (/api/v1/channels/mine).
+ * Matches the Prisma Channel model returned by the backend.
+ */
+export interface SellerChannelListing {
+  id: string;
+  name: string;
+  handle: string;
+  youtubeUrl: string | null;
+  niche: string;
+  subscribersCount: number;
+  monthlyViewsCount: number | null;
+  monetized: boolean;
+  verifiedAnalytics: boolean;
+  priceCents: number;
+  description: string;
+  featuredBadge: string | null;
+  status: ChannelStatus;
+  isPublished: boolean;
+  sellerId: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+/**
+ * Request payload for creating a new channel listing.
+ * Validated by createChannelSchema on the backend.
+ */
+export interface CreateChannelPayload {
+  name: string;
+  handle: string;
+  youtubeUrl?: string | null;
+  niche: string;
+  subscribersCount: number;
+  monthlyViewsCount?: number;
+  monetized?: boolean;
+  priceUsd: number;
+  description: string;
+}
+
+/**
+ * Request payload for updating an existing draft channel listing.
+ * Validated by updateChannelSchema on the backend.
+ */
+export interface UpdateChannelPayload {
+  name?: string;
+  handle?: string;
+  youtubeUrl?: string | null;
+  niche?: string;
+  subscribersCount?: number;
+  monthlyViewsCount?: number;
+  monetized?: boolean;
+  priceUsd?: number;
+  description?: string;
+}
+
+export type SellerChannelsResponse = ApiSuccessResponse<{ channels: SellerChannelListing[] }>;
+export type SingleSellerChannelResponse = ApiSuccessResponse<{ channel: SellerChannelListing }>;
+export type DeleteSellerChannelResponse = ApiSuccessResponse<{ success: boolean; id: string }>;
+
+/**
  * Safe client error representation that encapsulates HTTP status and sanitized messages
  * without exposing stack traces, raw server internals, or credentials.
  */
@@ -267,7 +338,7 @@ interface ServerResponsePayload {
 async function request<T>(
   endpoint: string,
   options: {
-    method: 'GET' | 'POST';
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     body?: unknown;
     token?: string;
     signal?: AbortSignal;
@@ -464,4 +535,237 @@ export async function fetchChannelById(
 
   return response;
 }
+
+/**
+ * Converts integer cents to USD dollar amount.
+ * Throws an Error if cents is negative, not an integer, or not finite.
+ */
+export function centsToUsd(cents: number): number {
+  if (!Number.isFinite(cents) || !Number.isInteger(cents) || cents < 0) {
+    throw new Error('Cents must be a non-negative integer.');
+  }
+  return cents / 100;
+}
+
+/**
+ * Validates that an authentication token string is non-empty.
+ * Throws an ApiError(401) if missing or whitespace.
+ */
+function requireAuthToken(token: string): string {
+  const trimmed = typeof token === 'string' ? token.trim() : '';
+  if (!trimmed) {
+    throw new ApiError('Authentication token is required.', 401);
+  }
+  return trimmed;
+}
+
+/**
+ * Validates and encodes a channel ID route parameter.
+ * Throws an ApiError(400) if missing or whitespace.
+ */
+function requireChannelId(id: string): string {
+  const trimmed = typeof id === 'string' ? id.trim() : '';
+  if (!trimmed) {
+    throw new ApiError('Channel ID is required.', 400);
+  }
+  return encodeURIComponent(trimmed);
+}
+
+/**
+ * Fetch all channel listings belonging to the authenticated seller from /api/v1/channels/mine.
+ */
+export async function fetchSellerChannels(
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<SellerChannelsResponse> {
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ channels: SellerChannelListing[] }>('/channels/mine', {
+    method: 'GET',
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (!response.data || !Array.isArray(response.data.channels)) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Fetch a single channel listing owned by the authenticated seller by its ID from /api/v1/channels/mine/:id.
+ */
+export async function fetchSellerChannelById(
+  id: string,
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<SingleSellerChannelResponse> {
+  const encodedId = requireChannelId(id);
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ channel: SellerChannelListing }>(`/channels/mine/${encodedId}`, {
+    method: 'GET',
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    !response.data.channel ||
+    typeof response.data.channel.id !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Create a new private draft channel listing for the authenticated seller via POST /api/v1/channels/mine.
+ */
+export async function createSellerChannel(
+  payload: CreateChannelPayload,
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<SingleSellerChannelResponse> {
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ channel: SellerChannelListing }>('/channels/mine', {
+    method: 'POST',
+    body: payload,
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    !response.data.channel ||
+    typeof response.data.channel.id !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Update an existing owned draft channel listing via PATCH /api/v1/channels/mine/:id.
+ */
+export async function updateSellerChannel(
+  id: string,
+  payload: UpdateChannelPayload,
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<SingleSellerChannelResponse> {
+  const encodedId = requireChannelId(id);
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ channel: SellerChannelListing }>(`/channels/mine/${encodedId}`, {
+    method: 'PATCH',
+    body: payload,
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    !response.data.channel ||
+    typeof response.data.channel.id !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Submit an owned draft channel listing for admin moderation review via POST /api/v1/channels/mine/:id/submit.
+ */
+export async function submitChannelForReview(
+  id: string,
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<SingleSellerChannelResponse> {
+  const encodedId = requireChannelId(id);
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ channel: SellerChannelListing }>(`/channels/mine/${encodedId}/submit`, {
+    method: 'POST',
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    !response.data.channel ||
+    typeof response.data.channel.id !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Unpublish an owned, currently published channel listing via POST /api/v1/channels/mine/:id/unpublish.
+ */
+export async function unpublishSellerChannel(
+  id: string,
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<SingleSellerChannelResponse> {
+  const encodedId = requireChannelId(id);
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ channel: SellerChannelListing }>(`/channels/mine/${encodedId}/unpublish`, {
+    method: 'POST',
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    !response.data.channel ||
+    typeof response.data.channel.id !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
+/**
+ * Delete an owned unpublished channel listing via DELETE /api/v1/channels/mine/:id.
+ */
+export async function deleteSellerChannel(
+  id: string,
+  token: string,
+  options?: { signal?: AbortSignal }
+): Promise<DeleteSellerChannelResponse> {
+  const encodedId = requireChannelId(id);
+  const validToken = requireAuthToken(token);
+
+  const response = await request<{ success: boolean; id: string }>(`/channels/mine/${encodedId}`, {
+    method: 'DELETE',
+    token: validToken,
+    signal: options?.signal,
+  });
+
+  if (
+    !response.data ||
+    typeof response.data !== 'object' ||
+    typeof response.data.id !== 'string'
+  ) {
+    throw new ApiError('Unexpected response format from TubeX server.', 500);
+  }
+
+  return response;
+}
+
 

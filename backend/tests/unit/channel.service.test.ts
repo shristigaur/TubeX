@@ -5,6 +5,11 @@ import { registerTestPrismaClient } from '../../src/config/prisma.js';
 export const mockChannelFindMany = vi.fn();
 export const mockChannelCount = vi.fn();
 export const mockChannelFindFirst = vi.fn();
+export const mockChannelFindUnique = vi.fn();
+export const mockChannelCreate = vi.fn();
+export const mockChannelUpdate = vi.fn();
+export const mockChannelUpdateMany = vi.fn();
+export const mockChannelDeleteMany = vi.fn();
 
 const mockPrisma = {
   $connect: vi.fn(),
@@ -14,6 +19,11 @@ const mockPrisma = {
     findMany: mockChannelFindMany,
     count: mockChannelCount,
     findFirst: mockChannelFindFirst,
+    findUnique: mockChannelFindUnique,
+    create: mockChannelCreate,
+    update: mockChannelUpdate,
+    updateMany: mockChannelUpdateMany,
+    deleteMany: mockChannelDeleteMany,
   },
 };
 
@@ -23,10 +33,19 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getPublicChannels,
   getPublicChannelById,
+  createChannelListing,
+  getSellerChannels,
+  getSellerChannelById,
+  updateSellerChannel,
+  submitChannelForReview,
+  unpublishSellerChannel,
+  deleteSellerChannel,
   formatCount,
   mapToPublicChannelDto,
   PUBLIC_CHANNEL_SELECT,
   ChannelValidationError,
+  ChannelNotFoundError,
+  ChannelForbiddenError,
 } from '../../src/services/channel.service.js';
 
 describe('Channel Service - getPublicChannels', () => {
@@ -746,3 +765,906 @@ describe('Channel Service - getPublicChannels', () => {
     });
   });
 });
+
+describe('Channel Service - Seller Operations', () => {
+  const sellerId = '507f1f77bcf86cd799439011';
+  const otherSellerId = '507f1f77bcf86cd799439099';
+  const channelId = '670c5e7b8f1a2b3c4d5e6f7a';
+
+  const baseDraftChannel = {
+    id: channelId,
+    name: 'Tech Insights Daily',
+    handle: '@techinsights',
+    youtubeUrl: 'https://youtube.com/@techinsights',
+    niche: 'Technology & Gadgets',
+    subscribersCount: 50000,
+    monthlyViewsCount: 200000,
+    monetized: false,
+    verifiedAnalytics: false,
+    priceCents: 500000,
+    description: 'Tech daily breakdowns and hardware reviews.',
+    featuredBadge: null,
+    status: 'DRAFT',
+    isPublished: false,
+    sellerId,
+    createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+  };
+
+  const validCreateInput = {
+    name: 'Tech Insights Daily',
+    handle: '@techinsights',
+    youtubeUrl: 'https://youtube.com/@techinsights',
+    niche: 'Technology & Gadgets',
+    subscribersCount: 50000,
+    monthlyViewsCount: 200000,
+    monetized: false,
+    priceUsd: 5000,
+    description: 'Tech daily breakdowns and hardware reviews.',
+  };
+
+  beforeEach(() => {
+    mockChannelFindMany.mockReset();
+    mockChannelCount.mockReset();
+    mockChannelFindFirst.mockReset();
+    mockChannelFindUnique.mockReset();
+    mockChannelCreate.mockReset();
+    mockChannelUpdate.mockReset();
+    mockChannelUpdateMany.mockReset();
+    mockChannelDeleteMany.mockReset();
+  });
+
+  describe('createChannelListing', () => {
+    it('should assign sellerId exclusively from the trusted function argument and default status to DRAFT and isPublished to false', async () => {
+      mockChannelCreate.mockResolvedValue({
+        ...baseDraftChannel,
+      });
+
+      const result = await createChannelListing(sellerId, validCreateInput);
+
+      expect(mockChannelCreate).toHaveBeenCalledWith({
+        data: {
+          sellerId,
+          name: 'Tech Insights Daily',
+          handle: '@techinsights',
+          youtubeUrl: 'https://youtube.com/@techinsights',
+          niche: 'Technology & Gadgets',
+          subscribersCount: 50000,
+          monthlyViewsCount: 200000,
+          monetized: false,
+          priceCents: 500000,
+          description: 'Tech daily breakdowns and hardware reviews.',
+          status: 'DRAFT',
+          isPublished: false,
+        },
+      });
+
+      expect(result.status).toBe('DRAFT');
+      expect(result.isPublished).toBe(false);
+      expect(result.sellerId).toBe(sellerId);
+    });
+
+    it('should correctly convert validated USD price to integer cents', async () => {
+      mockChannelCreate.mockResolvedValue({
+        ...baseDraftChannel,
+        priceCents: 123456,
+      });
+
+      await createChannelListing(sellerId, {
+        ...validCreateInput,
+        priceUsd: 1234.56,
+      });
+
+      const createCall = mockChannelCreate.mock.calls[0][0];
+      expect(createCall.data.priceCents).toBe(123456);
+    });
+
+    it('should reject attempts to inject sellerId or admin fields in the payload', async () => {
+      // Attempting to supply sellerId in payload
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          sellerId: otherSellerId,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      // Attempting to supply status in payload
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          status: 'AVAILABLE',
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      // Attempting to supply isPublished in payload
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          isPublished: true,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      // Attempting to supply verifiedAnalytics in payload
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          verifiedAnalytics: true,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      // Attempting to supply featuredBadge in payload
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          featuredBadge: 'Top Tier',
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      // Attempting to supply raw priceCents in payload
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          priceCents: 100000,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelCreate).not.toHaveBeenCalled();
+    });
+
+    it('should reject invalid input missing required fields or having negative price', async () => {
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          name: '',
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          priceUsd: -10,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        createChannelListing(sellerId, {
+          ...validCreateInput,
+          subscribersCount: -100,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+    });
+
+    it('should reject if sellerId argument is empty or whitespace-only', async () => {
+      await expect(createChannelListing('', validCreateInput)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(createChannelListing('   ', validCreateInput)).rejects.toThrow(
+        ChannelValidationError
+      );
+    });
+  });
+
+  describe('getSellerChannels', () => {
+    it('should return only listings belonging to the authenticated seller ordered newest first', async () => {
+      mockChannelFindMany.mockResolvedValue([baseDraftChannel]);
+
+      const channels = await getSellerChannels(sellerId);
+
+      expect(mockChannelFindMany).toHaveBeenCalledWith({
+        where: {
+          sellerId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+      expect(channels).toHaveLength(1);
+      expect(channels[0].sellerId).toBe(sellerId);
+    });
+
+    it('should never query another seller listings or leak cross-seller drafts', async () => {
+      mockChannelFindMany.mockResolvedValue([]);
+
+      await getSellerChannels(sellerId);
+
+      const findManyCall = mockChannelFindMany.mock.calls[0][0];
+      expect(findManyCall.where.sellerId).toBe(sellerId);
+      expect(findManyCall.where.sellerId).not.toBe(otherSellerId);
+    });
+
+    it('should reject if sellerId argument is empty or whitespace-only', async () => {
+      await expect(getSellerChannels('')).rejects.toThrow(ChannelValidationError);
+      await expect(getSellerChannels('   ')).rejects.toThrow(ChannelValidationError);
+    });
+  });
+
+  describe('getSellerChannelById', () => {
+    it('should scope lookup to both channel ID and seller ID', async () => {
+      mockChannelFindFirst.mockResolvedValue(baseDraftChannel);
+
+      const result = await getSellerChannelById(sellerId, channelId);
+
+      expect(mockChannelFindFirst).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+        },
+      });
+      expect(result).toEqual(baseDraftChannel);
+    });
+
+    it('should return null when listing does not exist (established not-found convention)', async () => {
+      mockChannelFindFirst.mockResolvedValue(null);
+
+      const result = await getSellerChannelById(sellerId, 'non-existent-id');
+
+      expect(result).toBeNull();
+      expect(mockChannelFindFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'non-existent-id',
+          sellerId,
+        },
+      });
+    });
+
+    it('should return null when channel belongs to another seller (cross-seller protection)', async () => {
+      mockChannelFindFirst.mockResolvedValue(null);
+
+      const result = await getSellerChannelById(otherSellerId, channelId);
+
+      expect(result).toBeNull();
+      expect(mockChannelFindFirst).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId: otherSellerId,
+        },
+      });
+    });
+
+    it('should reject if sellerId or channelId is missing or whitespace-only', async () => {
+      await expect(getSellerChannelById('', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(getSellerChannelById('   ', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(getSellerChannelById(sellerId, '')).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(getSellerChannelById(sellerId, '   ')).rejects.toThrow(
+        ChannelValidationError
+      );
+    });
+  });
+
+  describe('updateSellerChannel', () => {
+    const validUpdateInput = {
+      name: 'Updated Tech Insights',
+      priceUsd: 7500,
+      description: 'Updated description for channel.',
+    };
+
+    it('should update permitted fields using atomic conditional update requiring DRAFT status', async () => {
+      const updatedChannel = {
+        ...baseDraftChannel,
+        name: 'Updated Tech Insights',
+        priceCents: 750000,
+        description: 'Updated description for channel.',
+      };
+
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue(updatedChannel);
+
+      const updated = await updateSellerChannel(sellerId, channelId, validUpdateInput);
+
+      expect(mockChannelFindUnique).toHaveBeenCalledWith({
+        where: { id: channelId },
+      });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          status: 'DRAFT',
+        },
+        data: {
+          name: 'Updated Tech Insights',
+          priceCents: 750000,
+          description: 'Updated description for channel.',
+        },
+      });
+
+      expect(updated.name).toBe('Updated Tech Insights');
+      expect(updated.priceCents).toBe(750000);
+    });
+
+    it('should handle concurrent modification race condition and fail if updateMany count is 0', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      // Simulating concurrent status change from DRAFT to PENDING_REVIEW before write occurs
+      mockChannelUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, validUpdateInput)
+      ).rejects.toThrow(ChannelValidationError);
+    });
+
+    it('should reject attempts to update protected fields in payload', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, {
+          name: 'Valid Name',
+          sellerId: otherSellerId,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, {
+          name: 'Valid Name',
+          status: 'AVAILABLE',
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, {
+          name: 'Valid Name',
+          isPublished: true,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, {
+          name: 'Valid Name',
+          verifiedAnalytics: true,
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, {
+          name: 'Valid Name',
+          featuredBadge: 'Featured',
+        })
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject empty update payload without bypassing Zod validation', async () => {
+      await expect(
+        updateSellerChannel(sellerId, channelId, {})
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelFindUnique).not.toHaveBeenCalled();
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should block updates for non-DRAFT channels (PENDING_REVIEW, AVAILABLE, SOLD, DELISTED)', async () => {
+      // PENDING_REVIEW channel
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'PENDING_REVIEW',
+      });
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, validUpdateInput)
+      ).rejects.toThrow(ChannelValidationError);
+
+      // AVAILABLE channel
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'AVAILABLE',
+        isPublished: true,
+      });
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, validUpdateInput)
+      ).rejects.toThrow(ChannelValidationError);
+
+      // SOLD channel
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'SOLD',
+      });
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, validUpdateInput)
+      ).rejects.toThrow(ChannelValidationError);
+
+      // DELISTED channel
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      });
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, validUpdateInput)
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should block cross-seller updates and throw ChannelForbiddenError', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        sellerId: otherSellerId,
+      });
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, validUpdateInput)
+      ).rejects.toThrow(ChannelForbiddenError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw ChannelNotFoundError when channel does not exist', async () => {
+      mockChannelFindUnique.mockResolvedValue(null);
+
+      await expect(
+        updateSellerChannel(sellerId, 'missing-channel', validUpdateInput)
+      ).rejects.toThrow(ChannelNotFoundError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject if sellerId or channelId is empty or whitespace-only', async () => {
+      await expect(updateSellerChannel('', channelId, validUpdateInput)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(updateSellerChannel('   ', channelId, validUpdateInput)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(updateSellerChannel(sellerId, '', validUpdateInput)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(updateSellerChannel(sellerId, '   ', validUpdateInput)).rejects.toThrow(
+        ChannelValidationError
+      );
+    });
+  });
+
+  describe('submitChannelForReview', () => {
+    it('should submit a DRAFT channel for review using atomic conditional update, setting status to PENDING_REVIEW and keeping isPublished: false', async () => {
+      const reviewedChannel = {
+        ...baseDraftChannel,
+        status: 'PENDING_REVIEW',
+        isPublished: false,
+      };
+
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue(reviewedChannel);
+
+      const result = await submitChannelForReview(sellerId, channelId);
+
+      expect(mockChannelFindUnique).toHaveBeenCalledWith({
+        where: { id: channelId },
+      });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          status: 'DRAFT',
+        },
+        data: {
+          status: 'PENDING_REVIEW',
+          isPublished: false,
+        },
+      });
+
+      expect(result.status).toBe('PENDING_REVIEW');
+      expect(result.isPublished).toBe(false);
+    });
+
+    it('should handle concurrent submission/modification race condition and fail if updateMany count is 0', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      // Channel was concurrently submitted or changed before write
+      mockChannelUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        submitChannelForReview(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+    });
+
+    it('should never set isPublished: true or automatically approve the listing during submission', async () => {
+      const reviewedChannel = {
+        ...baseDraftChannel,
+        status: 'PENDING_REVIEW',
+        isPublished: false,
+      };
+
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue(reviewedChannel);
+
+      await submitChannelForReview(sellerId, channelId);
+
+      const updateCall = mockChannelUpdateMany.mock.calls[0][0];
+      expect(updateCall.data.isPublished).toBe(false);
+      expect(updateCall.data.status).toBe('PENDING_REVIEW');
+      expect(updateCall.data.status).not.toBe('AVAILABLE');
+    });
+
+    it('should prevent repeated review submissions if channel is already in PENDING_REVIEW', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'PENDING_REVIEW',
+      });
+
+      await expect(
+        submitChannelForReview(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject submission if channel is in AVAILABLE, SOLD, DELISTED, or non-DRAFT status', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'AVAILABLE',
+        isPublished: true,
+      });
+
+      await expect(
+        submitChannelForReview(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      });
+
+      await expect(
+        submitChannelForReview(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should block review submission for non-owned channel and throw ChannelForbiddenError', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        sellerId: otherSellerId,
+      });
+
+      await expect(
+        submitChannelForReview(sellerId, channelId)
+      ).rejects.toThrow(ChannelForbiddenError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw ChannelNotFoundError when channel does not exist', async () => {
+      mockChannelFindUnique.mockResolvedValue(null);
+
+      await expect(
+        submitChannelForReview(sellerId, 'non-existent-id')
+      ).rejects.toThrow(ChannelNotFoundError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject if sellerId or channelId is empty or whitespace-only', async () => {
+      await expect(submitChannelForReview('', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(submitChannelForReview('   ', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(submitChannelForReview(sellerId, '')).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(submitChannelForReview(sellerId, '   ')).rejects.toThrow(
+        ChannelValidationError
+      );
+    });
+  });
+
+  describe('unpublishSellerChannel', () => {
+    const publishedChannel = {
+      ...baseDraftChannel,
+      status: 'AVAILABLE',
+      isPublished: true,
+    };
+
+    it('should unpublish an owned, published listing, setting status to DELISTED and isPublished to false atomically', async () => {
+      const delistedChannel = {
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      };
+
+      mockChannelFindUnique.mockResolvedValue(publishedChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue(delistedChannel);
+
+      const result = await unpublishSellerChannel(sellerId, channelId);
+
+      expect(mockChannelFindUnique).toHaveBeenCalledWith({
+        where: { id: channelId },
+      });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          isPublished: true,
+          status: 'AVAILABLE',
+        },
+        data: {
+          status: 'DELISTED',
+          isPublished: false,
+        },
+      });
+
+      expect(result.status).toBe('DELISTED');
+      expect(result.isPublished).toBe(false);
+    });
+
+    it('should never publish or move listing to AVAILABLE as a side-effect of unpublishing', async () => {
+      const delistedChannel = {
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      };
+
+      mockChannelFindUnique.mockResolvedValue(publishedChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue(delistedChannel);
+
+      await unpublishSellerChannel(sellerId, channelId);
+
+      const updateCall = mockChannelUpdateMany.mock.calls[0][0];
+      expect(updateCall.data.isPublished).toBe(false);
+      expect(updateCall.data.status).toBe('DELISTED');
+      expect(updateCall.data.status).not.toBe('AVAILABLE');
+    });
+
+    it('should refuse to unpublish another seller listing and throw ChannelForbiddenError', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...publishedChannel,
+        sellerId: otherSellerId,
+      });
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelForbiddenError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to unpublish a listing with status SOLD or UNDER_CONTRACT', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...publishedChannel,
+        status: 'SOLD',
+      });
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      mockChannelFindUnique.mockResolvedValue({
+        ...publishedChannel,
+        status: 'UNDER_CONTRACT',
+      });
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to unpublish an unpublished listing (DRAFT, PENDING_REVIEW, DELISTED)', async () => {
+      // DRAFT
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      // PENDING_REVIEW
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'PENDING_REVIEW',
+      });
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      // DELISTED
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      });
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw ChannelNotFoundError when unpublishing a non-existent channel', async () => {
+      mockChannelFindUnique.mockResolvedValue(null);
+
+      await expect(
+        unpublishSellerChannel(sellerId, 'missing-channel')
+      ).rejects.toThrow(ChannelNotFoundError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('should handle concurrent modification race condition and fail if updateMany count is 0 during unpublish', async () => {
+      mockChannelFindUnique.mockResolvedValue(publishedChannel);
+      // Concurrently unpublished or delisted by admin
+      mockChannelUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        unpublishSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+    });
+
+    it('should reject if sellerId or channelId is empty or whitespace-only', async () => {
+      await expect(unpublishSellerChannel('', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(unpublishSellerChannel('   ', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(unpublishSellerChannel(sellerId, '')).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(unpublishSellerChannel(sellerId, '   ')).rejects.toThrow(
+        ChannelValidationError
+      );
+    });
+  });
+
+  describe('deleteSellerChannel', () => {
+    it('should successfully delete an unpublished channel owned by seller using atomic conditional deletion', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelDeleteMany.mockResolvedValue({ count: 1 });
+
+      const result = await deleteSellerChannel(sellerId, channelId);
+
+      expect(mockChannelFindUnique).toHaveBeenCalledWith({
+        where: { id: channelId },
+      });
+
+      expect(mockChannelDeleteMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          isPublished: false,
+        },
+      });
+
+      expect(result).toEqual({ success: true, id: channelId });
+    });
+
+    it('should successfully delete a DELISTED channel (since isPublished is false)', async () => {
+      const delistedChannel = {
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      };
+
+      mockChannelFindUnique.mockResolvedValue(delistedChannel);
+      mockChannelDeleteMany.mockResolvedValue({ count: 1 });
+
+      const result = await deleteSellerChannel(sellerId, channelId);
+
+      expect(result).toEqual({ success: true, id: channelId });
+      expect(mockChannelDeleteMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          isPublished: false,
+        },
+      });
+    });
+
+    it('should refuse deletion if listing is published (must unpublish before deletion rule)', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        status: 'AVAILABLE',
+        isPublished: true,
+      });
+
+      await expect(
+        deleteSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelDeleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should complete the full unpublish-then-delete workflow', async () => {
+      const publishedChannel = {
+        ...baseDraftChannel,
+        status: 'AVAILABLE',
+        isPublished: true,
+      };
+      const delistedChannel = {
+        ...baseDraftChannel,
+        status: 'DELISTED',
+        isPublished: false,
+      };
+
+      // 1. Initial attempt to delete while published is blocked
+      mockChannelFindUnique.mockResolvedValueOnce(publishedChannel);
+      await expect(
+        deleteSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+
+      // 2. Unpublish listing
+      mockChannelFindUnique.mockResolvedValueOnce(publishedChannel);
+      mockChannelUpdateMany.mockResolvedValueOnce({ count: 1 });
+      mockChannelFindFirst.mockResolvedValueOnce(delistedChannel);
+
+      const unpublishResult = await unpublishSellerChannel(sellerId, channelId);
+      expect(unpublishResult.isPublished).toBe(false);
+      expect(unpublishResult.status).toBe('DELISTED');
+
+      // 3. Deletion now succeeds on the unpublished/delisted listing
+      mockChannelFindUnique.mockResolvedValueOnce(delistedChannel);
+      mockChannelDeleteMany.mockResolvedValueOnce({ count: 1 });
+
+      const deleteResult = await deleteSellerChannel(sellerId, channelId);
+      expect(deleteResult).toEqual({ success: true, id: channelId });
+    });
+
+    it('should block deletion of non-owned channel and throw ChannelForbiddenError', async () => {
+      mockChannelFindUnique.mockResolvedValue({
+        ...baseDraftChannel,
+        sellerId: otherSellerId,
+      });
+
+      await expect(
+        deleteSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelForbiddenError);
+
+      expect(mockChannelDeleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw ChannelNotFoundError if channel does not exist', async () => {
+      mockChannelFindUnique.mockResolvedValue(null);
+
+      await expect(
+        deleteSellerChannel(sellerId, 'non-existent-id')
+      ).rejects.toThrow(ChannelNotFoundError);
+
+      expect(mockChannelDeleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should handle concurrent modification/publishing and throw if atomic delete count is 0', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelDeleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        deleteSellerChannel(sellerId, channelId)
+      ).rejects.toThrow(ChannelValidationError);
+    });
+
+    it('should reject if sellerId or channelId is empty or whitespace-only', async () => {
+      await expect(deleteSellerChannel('', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(deleteSellerChannel('   ', channelId)).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(deleteSellerChannel(sellerId, '')).rejects.toThrow(
+        ChannelValidationError
+      );
+      await expect(deleteSellerChannel(sellerId, '   ')).rejects.toThrow(
+        ChannelValidationError
+      );
+    });
+  });
+});
+

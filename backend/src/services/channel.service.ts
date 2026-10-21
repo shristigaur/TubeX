@@ -1,7 +1,11 @@
 import { prisma } from '../config/prisma.js';
-import type { Prisma } from '@prisma/client';
+import type { Channel, Prisma } from '@prisma/client';
 import {
   type ChannelQueryInput,
+  type CreateChannelInput,
+  type UpdateChannelInput,
+  createChannelSchema,
+  updateChannelSchema,
   BUDGET_RANGES,
   SUBSCRIBER_RANGES,
   NICHE_LABEL_MAP,
@@ -10,7 +14,7 @@ import {
 } from '../validators/channel.validator.js';
 
 /**
- * Custom validation error for inconsistent or conflicting query bounds.
+ * Custom validation error for inconsistent or conflicting query bounds and payload errors.
  * Carries an HTTP 400 status code compatible with the project's centralized errorHandler.
  */
 export class ChannelValidationError extends Error {
@@ -21,6 +25,39 @@ export class ChannelValidationError extends Error {
     this.name = 'ChannelValidationError';
     this.status = 400;
   }
+}
+
+/**
+ * Custom error when a channel record is not found.
+ * Carries an HTTP 404 status code compatible with the project's centralized errorHandler.
+ */
+export class ChannelNotFoundError extends Error {
+  status: number;
+
+  constructor(message: string = 'Channel not found') {
+    super(message);
+    this.name = 'ChannelNotFoundError';
+    this.status = 404;
+  }
+}
+
+/**
+ * Custom error when an operation is forbidden due to ownership mismatch.
+ * Carries an HTTP 403 status code compatible with the project's centralized errorHandler.
+ */
+export class ChannelForbiddenError extends Error {
+  status: number;
+
+  constructor(message: string = 'Forbidden: Access denied to channel') {
+    super(message);
+    this.name = 'ChannelForbiddenError';
+    this.status = 403;
+  }
+}
+
+export interface DeleteChannelResult {
+  success: boolean;
+  id: string;
 }
 
 /**
@@ -403,3 +440,372 @@ export async function getPublicChannelById(id: string): Promise<PublicChannelDto
 
   return mapToPublicChannelDto(channel);
 }
+
+/**
+ * Allowed channel statuses that can be updated by the seller.
+ * Product rules: Sellers can only edit private DRAFT listings before review submission.
+ */
+export const ALLOWED_SELLER_UPDATE_STATUSES = ['DRAFT'] as const;
+
+/**
+ * Creates a new private draft channel listing for a seller.
+ * - Enforces sellerId exclusively from the authenticated context.
+ * - Validates input strictly with createChannelSchema (rejects protected/admin fields).
+ * - Converts USD price to integer cents using usdToCents.
+ * - Enforces status: DRAFT and isPublished: false defaults.
+ */
+export async function createChannelListing(
+  sellerId: string,
+  input: unknown
+): Promise<Channel> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+
+  const parseResult = createChannelSchema.safeParse(input);
+  if (!parseResult.success) {
+    const errorMsg = parseResult.error.issues[0]?.message || 'Validation failed';
+    throw new ChannelValidationError(errorMsg);
+  }
+
+  const data = parseResult.data;
+  const priceCents = usdToCents(data.priceUsd);
+
+  return prisma.channel.create({
+    data: {
+      sellerId,
+      name: data.name,
+      handle: data.handle,
+      youtubeUrl: data.youtubeUrl ?? null,
+      niche: data.niche,
+      subscribersCount: data.subscribersCount,
+      monthlyViewsCount: data.monthlyViewsCount ?? null,
+      monetized: data.monetized ?? false,
+      priceCents,
+      description: data.description,
+      status: 'DRAFT',
+      isPublished: false,
+    },
+  });
+}
+
+/**
+ * Retrieves all channel listings belonging to an authenticated seller.
+ * Strictly scopes by sellerId to ensure private drafts or pending listings
+ * of other sellers are never exposed.
+ */
+export async function getSellerChannels(sellerId: string): Promise<Channel[]> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+
+  return prisma.channel.findMany({
+    where: {
+      sellerId,
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+}
+
+/**
+ * Retrieves a single channel listing by ID scoped to the seller.
+ * Returns null if not found or if the listing belongs to another seller
+ * (preserving the existing service's established not-found return convention).
+ */
+export async function getSellerChannelById(
+  sellerId: string,
+  channelId: string
+): Promise<Channel | null> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+  if (!channelId || typeof channelId !== 'string' || channelId.trim() === '') {
+    throw new ChannelValidationError('Channel ID is required');
+  }
+
+  return prisma.channel.findFirst({
+    where: {
+      id: channelId,
+      sellerId,
+    },
+  });
+}
+
+/**
+ * Updates a seller's existing channel listing.
+ * - Strictly validates input with updateChannelSchema (rejects protected/admin fields).
+ * - Enforces seller ownership.
+ * - Permits updates only for eligible statuses (DRAFT).
+ * - Enforces sellerId in the database update operation.
+ */
+export async function updateSellerChannel(
+  sellerId: string,
+  channelId: string,
+  input: unknown
+): Promise<Channel> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+  if (!channelId || typeof channelId !== 'string' || channelId.trim() === '') {
+    throw new ChannelValidationError('Channel ID is required');
+  }
+
+  const parseResult = updateChannelSchema.safeParse(input);
+  if (!parseResult.success) {
+    const errorMsg = parseResult.error.issues[0]?.message || 'Validation failed';
+    throw new ChannelValidationError(errorMsg);
+  }
+
+  const data = parseResult.data;
+
+  // 1. Verify existence and ownership
+  const existing = await prisma.channel.findUnique({
+    where: { id: channelId },
+  });
+
+  if (!existing) {
+    throw new ChannelNotFoundError('Channel not found');
+  }
+
+  if (existing.sellerId !== sellerId) {
+    throw new ChannelForbiddenError('Forbidden: You do not have permission to update this channel');
+  }
+
+  // 2. Enforce allowed status per product rules
+  if (!ALLOWED_SELLER_UPDATE_STATUSES.includes(existing.status as any)) {
+    throw new ChannelValidationError(
+      `Cannot update channel in status "${existing.status}". Only DRAFT channels can be edited.`
+    );
+  }
+
+  // 3. Build update payload safely
+  const updateData: Prisma.ChannelUpdateInput = {};
+
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.handle !== undefined) updateData.handle = data.handle;
+  if (data.youtubeUrl !== undefined) updateData.youtubeUrl = data.youtubeUrl ?? null;
+  if (data.niche !== undefined) updateData.niche = data.niche;
+  if (data.subscribersCount !== undefined) updateData.subscribersCount = data.subscribersCount;
+  if (data.monthlyViewsCount !== undefined) updateData.monthlyViewsCount = data.monthlyViewsCount ?? null;
+  if (data.monetized !== undefined) updateData.monetized = data.monetized;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.priceUsd !== undefined) {
+    updateData.priceCents = usdToCents(data.priceUsd);
+  }
+
+  // 4. Atomic conditional update: must still belong to seller and be in DRAFT status
+  const updateResult = await prisma.channel.updateMany({
+    where: {
+      id: channelId,
+      sellerId,
+      status: 'DRAFT',
+    },
+    data: updateData,
+  });
+
+  if (updateResult.count === 0) {
+    throw new ChannelValidationError(
+      'Failed to update channel: listing is not in DRAFT status or has been modified concurrently.'
+    );
+  }
+
+  const updated = await prisma.channel.findFirst({
+    where: {
+      id: channelId,
+      sellerId,
+    },
+  });
+
+  return updated!;
+}
+
+/**
+ * Submits a draft channel listing for admin moderation review.
+ * - Permits submission only from an eligible DRAFT status.
+ * - Enforces seller ownership.
+ * - Transitions status to PENDING_REVIEW while strictly keeping isPublished: false.
+ * - Uses atomic conditional update to ensure state is still DRAFT at write time.
+ * - Never approves or publishes the listing.
+ */
+export async function submitChannelForReview(
+  sellerId: string,
+  channelId: string
+): Promise<Channel> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+  if (!channelId || typeof channelId !== 'string' || channelId.trim() === '') {
+    throw new ChannelValidationError('Channel ID is required');
+  }
+
+  const existing = await prisma.channel.findUnique({
+    where: { id: channelId },
+  });
+
+  if (!existing) {
+    throw new ChannelNotFoundError('Channel not found');
+  }
+
+  if (existing.sellerId !== sellerId) {
+    throw new ChannelForbiddenError('Forbidden: You do not have permission to submit this channel for review');
+  }
+
+  if (existing.status !== 'DRAFT') {
+    throw new ChannelValidationError(
+      `Cannot submit channel with status "${existing.status}" for review. Only DRAFT channels can be submitted.`
+    );
+  }
+
+  // Atomic conditional update: must still belong to seller and be in DRAFT status
+  const updateResult = await prisma.channel.updateMany({
+    where: {
+      id: channelId,
+      sellerId,
+      status: 'DRAFT',
+    },
+    data: {
+      status: 'PENDING_REVIEW',
+      isPublished: false,
+    },
+  });
+
+  if (updateResult.count === 0) {
+    throw new ChannelValidationError(
+      'Failed to submit channel for review: listing is not in DRAFT status or has been modified concurrently.'
+    );
+  }
+
+  const updated = await prisma.channel.findFirst({
+    where: {
+      id: channelId,
+      sellerId,
+    },
+  });
+
+  return updated!;
+}
+
+/**
+ * Unpublishes a seller's published channel listing.
+ * - Enforces seller ownership.
+ * - Permits unpublishing only for currently published listings (isPublished: true, status: AVAILABLE).
+ * - Refuses unpublishing if listing is sold or under contract.
+ * - Transitions status to DELISTED and isPublished: false atomically.
+ * - Never publishes or approves a listing.
+ */
+export async function unpublishSellerChannel(
+  sellerId: string,
+  channelId: string
+): Promise<Channel> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+  if (!channelId || typeof channelId !== 'string' || channelId.trim() === '') {
+    throw new ChannelValidationError('Channel ID is required');
+  }
+
+  const existing = await prisma.channel.findUnique({
+    where: { id: channelId },
+  });
+
+  if (!existing) {
+    throw new ChannelNotFoundError('Channel not found');
+  }
+
+  if (existing.sellerId !== sellerId) {
+    throw new ChannelForbiddenError('Forbidden: You do not have permission to unpublish this channel');
+  }
+
+  if (existing.status === 'UNDER_CONTRACT' || existing.status === 'SOLD') {
+    throw new ChannelValidationError('Cannot unpublish a channel that is under contract or sold.');
+  }
+
+  if (!existing.isPublished || existing.status !== 'AVAILABLE') {
+    throw new ChannelValidationError('Cannot unpublish a channel that is not currently published.');
+  }
+
+  // Atomic conditional update: must still belong to seller, be published, and be AVAILABLE
+  const updateResult = await prisma.channel.updateMany({
+    where: {
+      id: channelId,
+      sellerId,
+      isPublished: true,
+      status: 'AVAILABLE',
+    },
+    data: {
+      status: 'DELISTED',
+      isPublished: false,
+    },
+  });
+
+  if (updateResult.count === 0) {
+    throw new ChannelValidationError(
+      'Failed to unpublish channel: listing is not currently published or has been modified concurrently.'
+    );
+  }
+
+  const updated = await prisma.channel.findFirst({
+    where: {
+      id: channelId,
+      sellerId,
+    },
+  });
+
+  return updated!;
+}
+
+/**
+ * Deletes a seller's channel listing.
+ * - Enforces seller ownership.
+ * - Refuses deletion if the listing is published (must be unpublished first).
+ * - Employs atomic conditional deletion to prevent race conditions.
+ */
+export async function deleteSellerChannel(
+  sellerId: string,
+  channelId: string
+): Promise<DeleteChannelResult> {
+  if (!sellerId || typeof sellerId !== 'string' || sellerId.trim() === '') {
+    throw new ChannelValidationError('Seller ID is required');
+  }
+  if (!channelId || typeof channelId !== 'string' || channelId.trim() === '') {
+    throw new ChannelValidationError('Channel ID is required');
+  }
+
+  const existing = await prisma.channel.findUnique({
+    where: { id: channelId },
+  });
+
+  if (!existing) {
+    throw new ChannelNotFoundError('Channel not found');
+  }
+
+  if (existing.sellerId !== sellerId) {
+    throw new ChannelForbiddenError('Forbidden: You do not have permission to delete this channel');
+  }
+
+  if (existing.isPublished) {
+    throw new ChannelValidationError(
+      'Cannot delete a published channel. The listing must be unpublished before deletion.'
+    );
+  }
+
+  // Atomic conditional delete enforcing id, sellerId, and isPublished: false
+  const result = await prisma.channel.deleteMany({
+    where: {
+      id: channelId,
+      sellerId,
+      isPublished: false,
+    },
+  });
+
+  if (result.count === 0) {
+    throw new ChannelValidationError(
+      'Failed to delete channel: listing may have been modified or published concurrently.'
+    );
+  }
+
+  return { success: true, id: channelId };
+}
+

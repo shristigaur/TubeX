@@ -1,9 +1,14 @@
+'use client';
+
 import React from 'react';
+import Link from 'next/link';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { MarketplaceSection } from '@/components/marketplace/MarketplaceSection';
+import { useAuth } from '@/context/AuthContext';
 
 export default function HomePage() {
+  const { isAuthenticated } = useAuth();
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
       <Navbar />
@@ -58,12 +63,12 @@ export default function HomePage() {
               >
                 Browse Channels
               </a>
-              <a
-                href="#how-it-works"
+              <Link
+                href={isAuthenticated ? '/dashboard' : '/login'}
                 className="w-full inline-flex items-center justify-center rounded-xl border border-slate-750 bg-slate-900/80 px-6 py-3.5 text-base font-semibold text-slate-200 transition-colors hover:border-cyan-500/50 hover:bg-slate-850 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400 sm:w-auto"
               >
                 Sell Your Channel
-              </a>
+              </Link>
             </div>
 
             {/* Trust highlights under Hero */}

@@ -84,6 +84,14 @@ export function Navbar() {
           >
             Trust &amp; Safety
           </Link>
+          {isAuthenticated && (
+            <Link
+              href="/dashboard"
+              className="text-sm font-medium text-slate-300 transition-colors hover:text-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400"
+            >
+              Dashboard
+            </Link>
+          )}
         </nav>
 
         {/* Action Buttons (Desktop) */}
@@ -180,6 +188,15 @@ export function Navbar() {
             >
               Trust &amp; Safety
             </Link>
+            {isAuthenticated && (
+              <Link
+                href="/dashboard"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-cyan-300"
+              >
+                Dashboard
+              </Link>
+            )}
             <div className="mt-2 flex flex-col gap-2 border-t border-slate-800 pt-3">
               {isLoading ? (
                 <div

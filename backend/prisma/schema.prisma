@@ -26,6 +26,7 @@ model User {
 
 enum ChannelStatus {
   DRAFT
+  PENDING_REVIEW
   AVAILABLE
   UNDER_CONTRACT
   SOLD
