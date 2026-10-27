@@ -386,6 +386,15 @@ describe('Channel Request Validators', () => {
       const result = createChannelSchema.safeParse(payload);
       expect(result.success).toBe(false);
     });
+
+    it('should reject explicit null for optional fields during channel creation', () => {
+      expect(
+        createChannelSchema.safeParse({ ...validPayload, youtubeUrl: null }).success
+      ).toBe(false);
+      expect(
+        createChannelSchema.safeParse({ ...validPayload, monthlyViewsCount: null }).success
+      ).toBe(false);
+    });
   });
 
   describe('updateChannelSchema', () => {
@@ -420,6 +429,60 @@ describe('Channel Request Validators', () => {
       expect(updateChannelSchema.safeParse({ subscribersCount: -1 }).success).toBe(false);
       expect(updateChannelSchema.safeParse({ handle: 'invalid with spaces' }).success).toBe(false);
       expect(updateChannelSchema.safeParse({ youtubeUrl: 'ftp://bad' }).success).toBe(false);
+      expect(updateChannelSchema.safeParse({ youtubeUrl: '' }).success).toBe(false);
+      expect(updateChannelSchema.safeParse({ youtubeUrl: 'https://vimeo.com/123' }).success).toBe(false);
+      expect(updateChannelSchema.safeParse({ monthlyViewsCount: -1 }).success).toBe(false);
+      expect(updateChannelSchema.safeParse({ monthlyViewsCount: 1.5 }).success).toBe(false);
+      expect(updateChannelSchema.safeParse({ monthlyViewsCount: 'invalid' }).success).toBe(false);
+    });
+
+    it('should accept explicit null for youtubeUrl to allow clearing stored optional URL', () => {
+      const result = updateChannelSchema.safeParse({ youtubeUrl: null });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.youtubeUrl).toBeNull();
+      }
+    });
+
+    it('should accept valid non-null replacement youtubeUrl', () => {
+      const result = updateChannelSchema.safeParse({
+        youtubeUrl: 'https://www.youtube.com/@updatedchannel',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.youtubeUrl).toBe('https://www.youtube.com/@updatedchannel');
+      }
+    });
+
+    it('should accept explicit null for monthlyViewsCount to allow resetting stored optional count', () => {
+      const result = updateChannelSchema.safeParse({ monthlyViewsCount: null });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.monthlyViewsCount).toBeNull();
+      }
+    });
+
+    it('should accept valid non-null replacement monthlyViewsCount including 0', () => {
+      const resultNonZero = updateChannelSchema.safeParse({ monthlyViewsCount: 750000 });
+      expect(resultNonZero.success).toBe(true);
+      if (resultNonZero.success) {
+        expect(resultNonZero.data.monthlyViewsCount).toBe(750000);
+      }
+
+      const resultZero = updateChannelSchema.safeParse({ monthlyViewsCount: 0 });
+      expect(resultZero.success).toBe(true);
+      if (resultZero.success) {
+        expect(resultZero.data.monthlyViewsCount).toBe(0);
+      }
+    });
+
+    it('should preserve omitted optional fields when other fields are updated', () => {
+      const result = updateChannelSchema.safeParse({ name: 'Only Name Updated' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.youtubeUrl).toBeUndefined();
+        expect(result.data.monthlyViewsCount).toBeUndefined();
+      }
     });
   });
 

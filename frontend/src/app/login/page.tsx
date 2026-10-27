@@ -16,7 +16,7 @@ interface FormErrors {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, authError } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -92,12 +92,13 @@ export default function LoginPage() {
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {/* General Error Banner */}
-        {errors.general && (
+        {(errors.general || authError) && (
           <div
             role="alert"
-            className="rounded-lg border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-200"
+            className="rounded-lg border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-200 space-y-1"
           >
-            {errors.general}
+            {authError && <div>{authError}</div>}
+            {errors.general && errors.general !== authError && <div>{errors.general}</div>}
           </div>
         )}
 

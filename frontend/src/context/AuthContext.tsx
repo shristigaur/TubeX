@@ -16,6 +16,7 @@ import {
   getMe as apiGetMe,
   ApiError,
 } from '@/lib/api';
+import { SESSION_EXPIRED_MESSAGE } from '@/lib/sessionExpiry.ts';
 
 const SESSION_STORAGE_TOKEN_KEY = 'tubex_access_token';
 
@@ -103,6 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             setToken(null);
             setUser(null);
+            if (err.statusCode === 401) {
+              setAuthError(SESSION_EXPIRED_MESSAGE);
+            }
           } else {
             // For temporary network or server errors (5xx, status 0), do not purge the token
             setAuthError(err.message);

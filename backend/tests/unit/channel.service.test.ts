@@ -1222,6 +1222,162 @@ describe('Channel Service - Seller Operations', () => {
         ChannelValidationError
       );
     });
+
+    it('should preserve existing youtubeUrl when omitted from update payload', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue({
+        ...baseDraftChannel,
+        name: 'New Name Only',
+      });
+
+      await updateSellerChannel(sellerId, channelId, { name: 'New Name Only' });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            youtubeUrl: expect.anything(),
+          }),
+        })
+      );
+    });
+
+    it('should clear stored youtubeUrl when explicit null is provided', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue({
+        ...baseDraftChannel,
+        youtubeUrl: null,
+      });
+
+      const updated = await updateSellerChannel(sellerId, channelId, { youtubeUrl: null });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          status: 'DRAFT',
+        },
+        data: {
+          youtubeUrl: null,
+        },
+      });
+      expect(updated.youtubeUrl).toBeNull();
+    });
+
+    it('should update youtubeUrl normally when valid replacement URL is provided', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue({
+        ...baseDraftChannel,
+        youtubeUrl: 'https://youtube.com/@updatedchannel',
+      });
+
+      const updated = await updateSellerChannel(sellerId, channelId, {
+        youtubeUrl: 'https://youtube.com/@updatedchannel',
+      });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          status: 'DRAFT',
+        },
+        data: {
+          youtubeUrl: 'https://youtube.com/@updatedchannel',
+        },
+      });
+      expect(updated.youtubeUrl).toBe('https://youtube.com/@updatedchannel');
+    });
+
+    it('should preserve existing monthlyViewsCount when omitted from update payload', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue({
+        ...baseDraftChannel,
+        name: 'New Name Only',
+      });
+
+      await updateSellerChannel(sellerId, channelId, { name: 'New Name Only' });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            monthlyViewsCount: expect.anything(),
+          }),
+        })
+      );
+    });
+
+    it('should clear stored monthlyViewsCount when explicit null is provided', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue({
+        ...baseDraftChannel,
+        monthlyViewsCount: null,
+      });
+
+      const updated = await updateSellerChannel(sellerId, channelId, { monthlyViewsCount: null });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          status: 'DRAFT',
+        },
+        data: {
+          monthlyViewsCount: null,
+        },
+      });
+      expect(updated.monthlyViewsCount).toBeNull();
+    });
+
+    it('should update monthlyViewsCount normally when valid replacement count is provided', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+      mockChannelUpdateMany.mockResolvedValue({ count: 1 });
+      mockChannelFindFirst.mockResolvedValue({
+        ...baseDraftChannel,
+        monthlyViewsCount: 850000,
+      });
+
+      const updated = await updateSellerChannel(sellerId, channelId, {
+        monthlyViewsCount: 850000,
+      });
+
+      expect(mockChannelUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: channelId,
+          sellerId,
+          status: 'DRAFT',
+        },
+        data: {
+          monthlyViewsCount: 850000,
+        },
+      });
+      expect(updated.monthlyViewsCount).toBe(850000);
+    });
+
+    it('should reject invalid non-null values for optional fields', async () => {
+      mockChannelFindUnique.mockResolvedValue(baseDraftChannel);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, { youtubeUrl: 'ftp://invalid-url' })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, { youtubeUrl: '' })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, { monthlyViewsCount: -50 })
+      ).rejects.toThrow(ChannelValidationError);
+
+      await expect(
+        updateSellerChannel(sellerId, channelId, { monthlyViewsCount: 1.25 })
+      ).rejects.toThrow(ChannelValidationError);
+
+      expect(mockChannelUpdateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('submitChannelForReview', () => {

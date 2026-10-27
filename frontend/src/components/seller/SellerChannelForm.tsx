@@ -5,6 +5,10 @@ import type {
   SellerChannelListing,
 } from '@/lib/api';
 import { centsToUsd } from '@/lib/api';
+import {
+  buildChannelFormPayload,
+  normalizeHandle,
+} from '@/lib/channelFormPayload.ts';
 
 export const ALLOWED_NICHES = [
   'Technology & Gadgets',
@@ -59,14 +63,6 @@ function isValidYouTubeUrl(urlStr: string): boolean {
   }
 }
 
-/**
- * Normalizes YouTube handle: trims and prepends '@' if omitted.
- */
-function normalizeHandle(val: string): string {
-  const trimmed = val.trim();
-  if (!trimmed) return '';
-  return trimmed.startsWith('@') ? trimmed.toLowerCase() : `@${trimmed}`.toLowerCase();
-}
 
 /**
  * Reusable controlled form for creating and editing channel listings.
@@ -235,39 +231,21 @@ export function SellerChannelForm({
     setIsSubmitting(true);
 
     try {
-      const trimmedViews = monthlyViewsCount.trim();
-      const parsedViews = trimmedViews !== '' ? Number(trimmedViews) : undefined;
-      const parsedPriceUsd = Number(priceUsd.trim());
-      const normalizedH = normalizeHandle(handle);
-      const trimmedUrl = youtubeUrl.trim() || undefined;
+      const payload = buildChannelFormPayload({
+        mode,
+        initialData,
+        name,
+        handle,
+        youtubeUrl,
+        niche,
+        subscribersCount,
+        monthlyViewsCount,
+        monetized,
+        priceUsd,
+        description,
+      });
 
-      if (mode === 'create') {
-        const payload: CreateChannelPayload = {
-          name: name.trim(),
-          handle: normalizedH,
-          youtubeUrl: trimmedUrl,
-          niche: niche.trim(),
-          subscribersCount: Number(subscribersCount.trim()),
-          ...(parsedViews !== undefined ? { monthlyViewsCount: parsedViews } : {}),
-          monetized,
-          priceUsd: parsedPriceUsd,
-          description: description.trim(),
-        };
-        await onSubmit(payload);
-      } else {
-        const payload: UpdateChannelPayload = {
-          name: name.trim(),
-          handle: normalizedH,
-          youtubeUrl: trimmedUrl,
-          niche: niche.trim(),
-          subscribersCount: Number(subscribersCount.trim()),
-          ...(parsedViews !== undefined ? { monthlyViewsCount: parsedViews } : {}),
-          monetized,
-          priceUsd: parsedPriceUsd,
-          description: description.trim(),
-        };
-        await onSubmit(payload);
-      }
+      await onSubmit(payload);
     } finally {
       setIsSubmitting(false);
     }

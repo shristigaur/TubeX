@@ -1462,6 +1462,43 @@ describe('Seller API Client', () => {
       const parsedBody = JSON.parse(capturedBody);
 
       assert.equal('monthlyViewsCount' in parsedBody, false);
+      assert.equal('youtubeUrl' in parsedBody, false);
+      assert.equal(res.data.channel.monthlyViewsCount, null);
+    });
+
+    it('should transmit explicit null for youtubeUrl and monthlyViewsCount in update request body when cleared', async () => {
+      let capturedBody = '';
+
+      globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: 'Channel listing updated successfully.',
+            data: {
+              channel: {
+                ...mockSellerChannel,
+                youtubeUrl: null,
+                monthlyViewsCount: null,
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      };
+
+      const clearPayload: UpdateChannelPayload = {
+        name: 'Cleared Optional Fields',
+        youtubeUrl: null,
+        monthlyViewsCount: null,
+      };
+
+      const res = await updateSellerChannel(testChannelId, clearPayload, testToken);
+      const parsedBody = JSON.parse(capturedBody);
+
+      assert.equal(parsedBody.youtubeUrl, null);
+      assert.equal(parsedBody.monthlyViewsCount, null);
+      assert.equal(res.data.channel.youtubeUrl, null);
       assert.equal(res.data.channel.monthlyViewsCount, null);
     });
 

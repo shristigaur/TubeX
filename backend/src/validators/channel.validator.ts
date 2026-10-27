@@ -147,9 +147,9 @@ const handleSchema = z.preprocess((val) => {
 }, z.string().regex(YOUTUBE_HANDLE_REGEX, 'Invalid YouTube handle format. Must be @ followed by 3-30 letters, numbers, periods, dashes, or underscores.'));
 
 /**
- * Reusable optional YouTube URL schema.
+ * Base non-null YouTube URL schema with protocol and hostname validation.
  */
-const youtubeUrlSchema = z
+const youtubeUrlBaseSchema = z
   .string()
   .trim()
   .url('Invalid YouTube URL')
@@ -166,8 +166,12 @@ const youtubeUrlSchema = z
     } catch {
       return false;
     }
-  }, 'YouTube URL must be a valid link using http or https (e.g. https://www.youtube.com/@channel)')
-  .optional();
+  }, 'YouTube URL must be a valid link using http or https (e.g. https://www.youtube.com/@channel)');
+
+/**
+ * Reusable optional YouTube URL schema for creation.
+ */
+const youtubeUrlSchema = youtubeUrlBaseSchema.optional();
 
 /**
  * Reusable niche category preprocessor and schema:
@@ -369,7 +373,7 @@ export const updateChannelSchema = z
       .max(100, 'Channel name cannot exceed 100 characters')
       .optional(),
     handle: handleSchema.optional(),
-    youtubeUrl: youtubeUrlSchema,
+    youtubeUrl: youtubeUrlBaseSchema.nullable().optional(),
     niche: nicheSchema.optional(),
     subscribersCount: z
       .number()
@@ -382,6 +386,7 @@ export const updateChannelSchema = z
       .int('Monthly views count must be an integer')
       .min(0, 'Monthly views count cannot be negative')
       .max(10_000_000_000, 'Monthly views count too large')
+      .nullable()
       .optional(),
     monetized: z.boolean().optional(),
     priceUsd: z

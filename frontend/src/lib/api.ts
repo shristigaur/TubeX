@@ -273,7 +273,7 @@ export interface UpdateChannelPayload {
   youtubeUrl?: string | null;
   niche?: string;
   subscribersCount?: number;
-  monthlyViewsCount?: number;
+  monthlyViewsCount?: number | null;
   monetized?: boolean;
   priceUsd?: number;
   description?: string;

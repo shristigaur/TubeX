@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
@@ -20,6 +20,10 @@ import {
   type ChannelStatus,
 } from '@/lib/api';
 import {
+  handleExpiredSession as processExpiredSession,
+  SESSION_EXPIRED_MESSAGE,
+} from '@/lib/sessionExpiry.ts';
+import {
   SellerChannelCard,
   SellerChannelForm,
   SellerChannelsEmptyState,
@@ -37,7 +41,7 @@ interface ConfirmationState {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, token, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
 
   // Channel listings state
   const [channels, setChannels] = useState<SellerChannelListing[]>([]);
@@ -79,6 +83,25 @@ export default function DashboardPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  // Prevent duplicate handling of expired session logout and redirection
+  const isHandlingExpiryRef = useRef<boolean>(false);
+
+  // Centralized handler for expired or invalid authentication sessions (HTTP 401)
+  const handleExpiredSession = useCallback(
+    (error: unknown): boolean => {
+      return processExpiredSession(error, {
+        guard: isHandlingExpiryRef,
+        logout,
+        redirectToLogin: () => router.push('/login'),
+        setFeedbackSuccess,
+        setFeedbackError,
+        setListingsError,
+        setFormServerError,
+      });
+    },
+    [logout, router]
+  );
+
   // Fetch initial channels on mount when authenticated
   useEffect(() => {
     let isCancelled = false;
@@ -96,6 +119,9 @@ export default function DashboardPage() {
         }
       } catch (err: unknown) {
         if (!isCancelled) {
+          if (handleExpiredSession(err)) {
+            return;
+          }
           const message =
             err instanceof ApiError
               ? err.message
@@ -114,11 +140,11 @@ export default function DashboardPage() {
     return () => {
       isCancelled = true;
     };
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, handleExpiredSession]);
 
   // Refresh helper for user actions (button click, after create/update/delete)
   const refreshChannels = useCallback(async () => {
-    if (!token) return;
+    if (!token || isHandlingExpiryRef.current) return;
 
     setIsRefreshing(true);
     setListingsError(null);
@@ -127,6 +153,9 @@ export default function DashboardPage() {
       const response = await fetchSellerChannels(token);
       setChannels(response.data.channels);
     } catch (err: unknown) {
+      if (handleExpiredSession(err)) {
+        return;
+      }
       const message =
         err instanceof ApiError
           ? err.message
@@ -135,11 +164,11 @@ export default function DashboardPage() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [token]);
+  }, [token, handleExpiredSession]);
 
   // Retry handler for error state
   const handleRetryLoading = useCallback(async () => {
-    if (!token) return;
+    if (!token || isHandlingExpiryRef.current) return;
 
     setIsLoadingListings(true);
     setListingsError(null);
@@ -148,6 +177,9 @@ export default function DashboardPage() {
       const response = await fetchSellerChannels(token);
       setChannels(response.data.channels);
     } catch (err: unknown) {
+      if (handleExpiredSession(err)) {
+        return;
+      }
       const message =
         err instanceof ApiError
           ? err.message
@@ -156,7 +188,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoadingListings(false);
     }
-  }, [token]);
+  }, [token, handleExpiredSession]);
 
   // Auto-dismiss success notification after 6 seconds
   useEffect(() => {
@@ -212,8 +244,8 @@ export default function DashboardPage() {
 
   // Create or Update submission handler
   const handleFormSubmit = async (payload: CreateChannelPayload | UpdateChannelPayload) => {
-    if (!token) {
-      setFormServerError('Your session has expired. Please sign in again.');
+    if (!token || isHandlingExpiryRef.current) {
+      setFormServerError(SESSION_EXPIRED_MESSAGE);
       return;
     }
 
@@ -235,6 +267,9 @@ export default function DashboardPage() {
       setEditingChannel(null);
       await refreshChannels();
     } catch (err: unknown) {
+      if (handleExpiredSession(err)) {
+        return;
+      }
       const message =
         err instanceof ApiError
           ? err.message
@@ -285,7 +320,7 @@ export default function DashboardPage() {
   // Execute confirmed action
   const handleConfirmAction = async () => {
     const { type, channel } = confirmation;
-    if (!channel || !token) return;
+    if (!channel || !token || isHandlingExpiryRef.current) return;
 
     setIsConfirmationLoading(true);
     setActiveActionChannelId(channel.id);
@@ -310,12 +345,15 @@ export default function DashboardPage() {
       setConfirmation({ isOpen: false, type: 'delete', channel: null });
       await refreshChannels();
     } catch (err: unknown) {
+      setConfirmation({ isOpen: false, type: 'delete', channel: null });
+      if (handleExpiredSession(err)) {
+        return;
+      }
       const message =
         err instanceof ApiError
           ? err.message
           : `Failed to ${type} listing. Please check your network and try again.`;
       setFeedbackError(message);
-      setConfirmation({ isOpen: false, type: 'delete', channel: null });
     } finally {
       setIsConfirmationLoading(false);
       setActiveActionChannelId(null);
